@@ -7,7 +7,6 @@ import math
 
 from .transformer import TransformerBlock
 from .embedding import BERTEmbedding
-from .test_transformer_spatial import BERT_Space
 
 class BERT(nn.Module):
     def __init__(self,
