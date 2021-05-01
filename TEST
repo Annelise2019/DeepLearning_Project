@@ -1,0 +1,226 @@
+import os
+import torch
+import torchvision
+import time
+from torch import optim, nn
+from config import params
+from data_process import SkeletonFeeder
+from torch.utils.data import DataLoader
+from model import Classification
+#from Criterion import bert_loss
+from tensorboardX import SummaryWriter
+from tqdm import tqdm
+from warmup import GradualWarmupScheduler
+
+class AverageMeter(object):
+    """Computes and stores the average and current value"""
+    def __init__(self):
+        self.reset()
+
+    def reset(self):
+        self.val = 0
+        self.avg = 0
+        self.sum = 0
+        self.count = 0
+
+    def update(self, val, n=1):
+        self.val = val
+        self.sum += val * n
+        self.count += n
+        self.avg = self.sum / self.count
+
+def accuracy(output, target, way, topk=(1,)):
+    """Computes the precision@k for the specified values of k"""
+    maxk = max(topk)
+    batch_size = target.size(0)
+
+    _, pred = output.topk(maxk, 1, True, True)
+    pred = pred.t()
+    correct = pred.eq(target.view(1, -1).expand_as(pred))
+
+    res = []
+    for k in topk:
+        correct_k = correct[:k].view(-1).float().sum(0)
+        res.append(correct_k.mul_(100.0 / batch_size))
+    return res
+
+def train(model, train_loader, optimizer, criterion):
+    batch_time = AverageMeter()
+    data_time = AverageMeter()
+    losses = AverageMeter()
+    top1 = AverageMeter()
+    top5 = AverageMeter()
+
+    end = time.time()
+    model.train()
+    for step, (input, label) in enumerate(tqdm(train_loader)):
+        data_time.update(time.time() - end)
+        input = input.cuda(params['gpu'][0]) #to do--->
+        label = label.cuda(params['gpu'][0]) #to do--->
+
+#        output_classify1, output_classify2 = model(input)
+        output_classify = model(input)
+
+#        prec1, prec5 = accuracy((output_classify1+output_classify2).data, label, 1, topk=(1, 5))
+        prec1, prec5 = accuracy(output_classify.data, label, 1, topk=(1, 5))
+        top1.update(prec1.item(), input.size(0))
+        top5.update(prec5.item(), input.size(0))
+        
+       
+#        loss = criterion(output_classify1, label) + criterion(output_classify2, label)
+        loss = criterion(output_classify, label)
+        optimizer.zero_grad()
+        loss.backward()
+        optimizer.step()
+        batch_time.update(time.time() - end)
+        end = time.time()
+        losses.update(loss.item())
+    return losses.avg, top1.avg, top5.avg, batch_time, data_time
+
+def valid(model, train_loader, optimizer, criterion):
+    losses = AverageMeter()
+    top1 = AverageMeter()
+    top5 = AverageMeter()
+    model.eval()
+    with torch.no_grad():
+        for step, (input, label) in enumerate(tqdm(train_loader)):
+            input = input.cuda(params['gpu'][0])
+            label = label.cuda(params['gpu'][0])
+
+#            output_classify1,output_classify2 = model(input)
+            output_classify = model(input)
+#            prec1, prec5 = accuracy((output_classify1+output_classify2).data, label, 1, topk=(1, 5))
+            prec1, prec5 = accuracy(output_classify.data, label, 1, topk=(1, 5))
+            top1.update(prec1.item(), input.size(0))
+            top5.update(prec5.item(), input.size(0))
+
+#            loss = criterion(output_classify1, label) + criterion(output_classify2, label)
+            loss = criterion(output_classify, label)
+            losses.update(loss.item())
+    return losses.avg, top1.avg, top5.avg
+
+def main():
+    #define the dataloader
+    train_loader = DataLoader(SkeletonFeeder(mode='train', debug=False), batch_size=params['batchsize'], shuffle=True, num_workers=params['numworkers'])
+    val_loader = DataLoader(SkeletonFeeder(mode='valid', debug=False), batch_size=params['batchsize'], shuffle=False, num_workers=params['numworkers'])
+    n_class = params['n_class']
+    cur_time = time.strftime('%Y-%m-%d-%H-%M-%S', time.localtime(time.time()))
+    #use the model and transfer to gpu
+    model = Classification(n_class=n_class) #add model cfg 
+    model = model.cuda(params['gpu'][0])#to do--->
+    model = nn.DataParallel(model, device_ids=params['gpu'])
+
+    """
+    if False:#params['load_stgcn']:
+         prepare_checkpoint = './checkpoint/st_gcn.kinetics-6fa43f73.pth'
+         model_dict = model.state_dict()
+         st_dict = {}
+         saved_checkpoint = torch.load(prepare_checkpoint, map_location = 'cpu')
+#         pretrain_dict = {k.replace("module.gcn_bert","module.pretrainModel"):v for i, (k,v) in enumerate(pretrain_dict.items()) if k.replace("module.gcn_bert","module.pretrainModel") in model_dict}
+         for i, (k,v) in enumerate(saved_checkpoint.items()):
+             if i < 8:
+                 st_dict[list(model_dict.keys())[i]] = v
+             elif 'edge_importance.0' in k:
+                 st_dict['pretrainModel.'+k] = v
+         model_dict.update(st_dict)
+         model.load_state_dict(model_dict)
+         print('load stgcn model finish')
+    """
+
+    if params['pretrain']:
+         pretrain_dict = torch.load(params['pretrain'], map_location='cpu')
+         model_dict = model.state_dict()
+#         print(model_dict.keys())
+#         print(pretrain_dict.keys())
+#         pretrain_dict = {k:v for k,v in pretrain_dict.items() if k in model_dict}
+#         exit()
+         pretrain_dict = {k.replace("module.gcn_bert","module.pretrainModel"):v for k,v in pretrain_dict.items() if k.replace("module.gcn_bert","module.pretrainModel") in model_dict}
+#         print([False for c in list(pretrain_dict.keys()) if c not in list(model_dict.keys())])
+#         exit()
+         
+         model_dict.update(pretrain_dict)                           
+         model.load_state_dict(model_dict)
+         print('load pretrain model finish')
+         for name, value in model.named_parameters():
+             if 'pretrainModel' in name:
+                 value.requires_grad = False
+#            if ('fn' not in name) and ('gcn' not in name) and ('edge_importance' not in name):
+    
+#            if 'fn' not in name:
+#                value.requires_grad = False 
+#            else:
+#                print('train', name)
+
+        
+
+    if params['retrain']:
+        trained_dict = torch.load(params['retrain'],map_location='cpu')
+        model_dict = model.state_dict()
+        trained_dict = {k:v for k,v in trained_dict.items() if k in model_dict}      
+        model_dict.update(trained_dict)
+        model.load_state_dict(model_dict)
+        print('load trained model finish')
+        
+#        for name, value in model.named_parameters():
+#             if 'pretrainModel' in name:
+#             if name in trained_dict.keys():
+#                 value.requires_grad = False
+
+    model_params = filter(lambda p: p.requires_grad, model.parameters())
+
+
+    #define the optimizer and schedule
+    optimizer = optim.Adam(model_params, lr=params['lr'], weight_decay=params['weight_decay'])
+#    optimizer = optim.SGD(model_params, lr=params['lr'], momentum=0.9, dampening=0, weight_decay=params['weight_decay'], nesterov=True)
+    schedule = optim.lr_scheduler.ReduceLROnPlateau(optimizer, 'min', factor=0.333, patience=2, verbose=True)
+
+#    scheduler_cosine = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, params['epoch'])
+#    scheduler_warmup = GradualWarmupScheduler(optimizer, multiplier=1.0, total_epoch=params['epoch']//10, after_scheduler=scheduler_cosine)    
+
+    writer = SummaryWriter()
+#    criterion = bert_loss()
+    criterion = nn.CrossEntropyLoss() 
+    min_loss = 1000
+#    if os.path.exists(params['log']):
+#        os.remove(params['log'])#to do--->save all logs in different files
+    print('-------------------start training----------------------')
+    print('lr:', optimizer.param_groups[0]['lr'])
+    for i in range(params['epoch']):
+        train_loss, train_top1, train_top5, batch_time, data_time = train(model, train_loader, optimizer,criterion)
+        valid_loss, val_top1, val_top5 = valid(model, val_loader,optimizer,criterion)
+        schedule.step(valid_loss)
+#        scheduler_warmup.step()
+
+        f = open(params['log']+'bert_classifylog_'+cur_time+'.txt', 'a')
+        print('epoch:', str(i + 1) + "/" + str(params['epoch']))
+        print('data time:%0.3f'%data_time.avg, 'batch time:%0.3f'%batch_time.avg, 'epoch time:%0.3f'%(batch_time.sum))
+        print('train loss:%0.8f'%train_loss, 'top1:%0.2f'%train_top1, '%', 'top5:%0.2f'%train_top5, '%', 'lr:', optimizer.param_groups[0]['lr'])
+        print('valid loss:%0.8f'%valid_loss, 'top1:%0.2f'%val_top1, '%', 'top5:%0.2f'%val_top5, '%')
+        f.write('epoch:'+str(i+1)+"/"+str(params['epoch'])+'\n')
+        f.write('data time:%0.3f'%data_time.avg+'batch time:%0.3f'%batch_time.avg+'epoch time:%0.3f'%(batch_time.sum)+'\n')
+        f.write('train loss:%0.8f'%train_loss+'top1:%0.2f'%train_top1+'%'+'top5:%0.2f'%train_top5+'%'+'lr:'+str(optimizer.param_groups[0]['lr'])+'\n')
+        f.write('valid loss:%0.8f'%valid_loss+'top1:%0.2f'%val_top1+'%'+'top5:%0.2f'%val_top5+'%'+'\n')
+        f.write('************************************\n')
+        f.close()
+        
+        
+#        writer = SummaryWriter()
+        writer.add_scalar('train loss', train_loss, i)
+        writer.add_scalar('valid loss', valid_loss, i) 
+        writer.add_scalar('train top1', train_top1, i)
+        writer.add_scalar('valid top1', val_top1, i)
+        writer.add_scalar('train top5', train_top5, i)
+        writer.add_scalar('valid top5', val_top5, i)
+
+#        writer.close()
+
+        if valid_loss < min_loss:
+            torch.save(model.state_dict(), params['save_path']+'bert_classifymodel_'+cur_time+'.pth')
+            print('saving model successful to --->',params['save_path'])
+            min_loss = valid_loss
+#        if optimizer.param_groups[0]['lr'] < 0.1*params['lr']:
+#            break
+    writer.close()
+
+if __name__ == '__main__':
+    main()
