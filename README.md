@@ -14,7 +14,7 @@ Transformer applied in Skeleton-based human action recognition
 2) change the data path in these files
 -    data_process/skeleton_feeder.py
 -    config.py 
-3) change the gpu setting
+3) change the gpu setting in these files
 -    config.py
   
 4) run the model using this command:
