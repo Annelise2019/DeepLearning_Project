@@ -39,7 +39,7 @@ class BERT(nn.Module):
         
         x = x.permute(0, 4, 3, 1, 2).contiguous()
         x = x.view(N * M, V * C, T)
-        x = self.bn(x) #N*M, T, V*C ---> to research
+        x = self.bn(x)
         x = x.permute(0,2,1).contiguous()#N*M,T,V*C
     
         #To add the first token
