@@ -3,7 +3,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch.autograd import Variable
 
-from .two_stream_transformer import BERT
+from .backbone import BERT
 
 
 class Classification(nn.Module):
