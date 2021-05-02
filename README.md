@@ -20,8 +20,9 @@ Transformer applied in Skeleton-based human action recognition
     config.py
   
 4) run the model using this command:
->       python classify.py
+>      python classify.py
 
-6) result: a folder named "log" will be created to store all the logging traces of your tranning  
-           a folder named "checkpoint" will be created to store the model parameters and thus you can retrain your model by changing relative parameters in config.py
+6) result: 
+a folder named "log" will be created to store all the logging traces of your tranning  
+a folder named "checkpoint" will be created to store the model parameters and thus you can retrain your model by changing relative parameters in config.py
           
