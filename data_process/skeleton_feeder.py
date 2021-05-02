@@ -31,12 +31,12 @@ class SkeletonFeeder(torch.utils.data.Dataset):
         self.debug = debug
         data_root = params['root']
         if mode == 'train':
-            self.data_path = glob('/home/xmj/dataset/nturgbd/60train_data.npy') #to change to your own data repo
-            self.label_path = glob('/home/xmj/dataset/nturgbd/60train_label.pkl')
+            self.data_path = glob('/home/xmj/dataset/nturgbd/60train_data.npy') #to change to your own data path
+            self.label_path = glob('/home/xmj/dataset/nturgbd/60train_label.pkl')  #to change to your own data path
 
         else:
-            self.data_path = glob('/home/xmj/dataset/nturgbd/60val_data.npy')
-            self.label_path = glob('/home/xmj/dataset/nturgbd/60val_label.pkl')
+            self.data_path = glob('/home/xmj/dataset/nturgbd/60val_data.npy')  #to change to your own data path
+            self.label_path = glob('/home/xmj/dataset/nturgbd/60val_label.pkl')  #to change to your own data path
 
         self.random_choose = random_choose
         self.random_move = random_move
