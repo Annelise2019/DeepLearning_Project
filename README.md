@@ -7,9 +7,7 @@ Transformer applied in Skeleton-based human action recognition
 0) download the projet via git:
  >     git clone https://github.com/Annelise2019/DeepLearning_Project.git
 
-1) download the dataset NTU-60 via:
-      http://rose1.ntu.edu.sg/datasets/actionrecognition.asp  
-      
+1) download the dataset [NTU-60](http://rose1.ntu.edu.sg/datasets/actionrecognition.asp)              
    And then, this command should be used to build the database for training or evaluation:
  >     python tools/ntu_gendata.py --data_path <path to nturgbd+d_skeletons>
 
@@ -23,6 +21,6 @@ Transformer applied in Skeleton-based human action recognition
 >      python classify.py
 
 6) result: 
-a folder named "log" will be created to store all the logging traces of your tranning  
-a folder named "checkpoint" will be created to store the model parameters and thus you can retrain your model by changing relative parameters in config.py
+- a folder named "log" will be created to store all the logging traces of your tranning  
+- a folder named "checkpoint" will be created to store the model parameters and thus you can retrain your model by changing relative parameters in config.py
           
